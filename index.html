@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="AetherConvert — Local-first image and document converter. Convert, compress, resize images and PDFs entirely in your browser. No uploads, no servers.">
+<title>AetherConvert 1.0 — Local-First Processing</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<!-- All processing runs locally in your browser. No file is ever uploaded to a server. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{--emerald:#10B981;--bg-deep:#09090B;--surface:#18181B}
+*{box-sizing:border-box}
+body{font-family:Inter,sans-serif;background:var(--bg-deep);color:#FAFAFA;min-height:100vh}
+.glass-panel{background:rgba(24,24,27,.6);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.05)}
+.sidebar-item:hover{background:rgba(16,185,129,.1);color:var(--emerald)}
+.sidebar-item.active-tool{border-left:3px solid var(--emerald);background:rgba(16,185,129,.05);color:var(--emerald)}
+.drop-zone{border:2px dashed rgba(113,113,122,.3);transition:all .3s ease}
+.drop-zone:hover,.drop-zone.dragover{border-color:var(--emerald);background:rgba(16,185,129,.05)}
+input[type=range]{accent-color:var(--emerald)}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--bg-deep)}::-webkit-scrollbar-thumb{background:#27272a;border-radius:10px}
+button:disabled{opacity:.45;cursor:not-allowed;transform:none!important}
+.preview-img{max-width:100%;max-height:320px;object-fit:contain;border-radius:12px}
+.small-btn{border:1px solid rgba(255,255,255,.12);padding:.55rem .8rem;border-radius:.65rem;font-size:.8rem;background:transparent;color:#FAFAFA;cursor:pointer}
+.small-btn:hover{border-color:#10B981;color:#10B981}
+input,select,textarea{color-scheme:dark}
+.status{min-height:1.25rem;font-size:.8rem}
+@media(max-width:760px){
+  body{flex-direction:column}
+  aside{width:100%!important;max-height:none}
+  main{min-height:70vh}
+  header{padding:1rem!important}
+  .header-search{width:100%!important}
+  .main-pad{padding:1rem!important}
+  .drop-zone{padding:2rem!important}
+}
+</style>
+</head>
+<body class="flex min-h-screen">
+<!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+<aside class="w-72 glass-panel flex flex-col border-r border-white/5 shrink-0">
+  <div class="p-8">
+    <h1 class="text-xl font-bold tracking-tighter flex items-center gap-2">
+      <span class="w-3 h-3 bg-[#10B981] rounded-full animate-pulse"></span>AETHER<span class="text-zinc-500 font-light">CONVERT</span>
+    </h1>
+  </div>
+  <nav class="flex-1 px-4 space-y-8 overflow-y-auto" aria-label="Tools navigation">
+    <div>
+      <p class="px-4 text-[10px] uppercase tracking-[0.2em] text-zinc-500 mb-4">Image Formats</p>
+      <div class="space-y-1">
+        <!-- FIX: separate tool key "convert" for format conversion; was duplicate "compress" -->
+        <a href="#" data-tool="convert" class="sidebar-item flex items-center px-4 py-3 rounded-lg text-sm transition-all" title="Convert between JPG, PNG and WEBP">JPG / PNG / WEBP</a>
+        <a href="#" data-tool="image-pdf" class="sidebar-item flex items-center px-4 py-3 rounded-lg text-sm transition-all" title="Combine images into a PDF">Image to PDF</a>
+        <a href="#" data-tool="pdf-image" class="sidebar-item flex items-center px-4 py-3 rounded-lg text-sm transition-all" title="Export PDF pages as images">PDF to Image</a>
+      </div>
+    </div>
+    <div>
+      <p class="px-4 text-[10px] uppercase tracking-[0.2em] text-zinc-500 mb-4">Edit &amp; Optimize</p>
+      <div class="space-y-1">
+        <a href="#" data-tool="compress" class="sidebar-item active-tool flex items-center px-4 py-3 rounded-lg text-sm transition-all" title="Reduce image file size">Advanced Compression</a>
+        <a href="#" data-tool="resize" class="sidebar-item flex items-center px-4 py-3 rounded-lg text-sm transition-all" title="Resize image to exact dimensions">Resize &amp; Crop</a>
+        <a href="#" data-tool="metadata" class="sidebar-item flex items-center px-4 py-3 rounded-lg text-sm transition-all" title="Strip EXIF and embedded metadata">Metadata Remover</a>
+      </div>
+    </div>
+    <div>
+      <p class="px-4 text-[10px] uppercase tracking-[0.2em] text-zinc-500 mb-4">Utilities</p>
+      <div class="space-y-1">
+        <a href="#" data-tool="text-pdf" class="sidebar-item flex items-center px-4 py-3 rounded-lg text-sm transition-all" title="Convert plain text into a PDF">Text to PDF</a>
+        <a href="#" data-tool="word-count" class="sidebar-item flex items-center px-4 py-3 rounded-lg text-sm transition-all" title="Count words, characters and sentences">Word Counter</a>
+      </div>
+    </div>
+  </nav>
+  <div class="p-6 border-t border-white/5">
+    <div class="flex items-center gap-3 text-xs text-zinc-500">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[#10B981]" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+      </svg>
+      Local-Only Processing
+    </div>
+  </div>
+</aside>
+
+<!-- ═══════════════════ MAIN ═══════════════════ -->
+<main class="flex-1 flex flex-col relative min-w-0">
+  <header class="min-h-20 flex items-center justify-between gap-4 px-10 py-4 border-b border-white/5">
+    <div class="relative w-96 header-search">
+      <label for="toolSearch" class="sr-only">Search tools</label>
+      <input id="toolSearch" type="search" placeholder="Search for tools…" autocomplete="off"
+             class="w-full bg-zinc-900 border border-white/10 rounded-full py-2 px-10 text-sm focus:outline-none focus:border-[#10B981]/50 transition-all">
+      <svg class="w-4 h-4 absolute left-4 top-2.5 text-zinc-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+      </svg>
+    </div>
+    <div class="flex items-center gap-6 shrink-0">
+      <span class="text-xs text-zinc-500">v1.0 Stable</span>
+      <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-[#10B981] to-emerald-900 p-[1px]" aria-hidden="true">
+        <div class="w-full h-full rounded-full bg-zinc-950 flex items-center justify-center text-[10px] font-bold">AC</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="main-pad p-10 flex-1 overflow-y-auto">
+    <div class="max-w-4xl mx-auto space-y-8">
+
+      <!-- PAGE TITLE -->
+      <section>
+        <h2 id="pageTitle" class="text-3xl font-medium mb-2">Advanced Image Compression</h2>
+        <p id="pageSubtitle" class="text-zinc-500">Intelligent size reduction using local browser-based processing.</p>
+      </section>
+
+      <!-- UPLOAD DROP ZONE -->
+      <section id="uploadSection"
+               class="drop-zone rounded-3xl p-20 flex flex-col items-center justify-center text-center space-y-4 cursor-pointer"
+               tabindex="0" role="button" aria-label="Choose files or drop files here">
+        <div class="w-16 h-16 bg-zinc-900 rounded-2xl flex items-center justify-center mb-2">
+          <svg class="w-8 h-8 text-[#10B981]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+        </div>
+        <div>
+          <p id="uploadTitle" class="text-lg font-medium">Drag and drop image</p>
+          <p id="uploadHint" class="text-sm text-zinc-500">PNG, JPG, WEBP up to 50 MB</p>
+        </div>
+        <button id="selectFileBtn" type="button"
+                class="mt-4 bg-[#10B981] text-black font-semibold px-8 py-3 rounded-xl hover:bg-emerald-400 transition-colors">
+          Select File
+        </button>
+        <!-- FIX: file input accept and multiple set dynamically -->
+        <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp" class="hidden">
+      </section>
+
+      <!-- IMAGE / FILE PREVIEW -->
+      <section id="imageWorkspace" class="hidden space-y-6">
+        <div class="glass-panel p-5 rounded-2xl flex flex-col md:flex-row gap-5 items-center">
+          <!-- FIX: preview hidden by default and shown/hidden per tool -->
+          <img id="preview" class="preview-img hidden" alt="Selected image preview">
+          <div class="flex-1 min-w-0 w-full">
+            <p id="fileName" class="font-medium break-all"></p>
+            <p id="fileInfo" class="text-sm text-zinc-500 mt-2"></p>
+            <div class="flex flex-wrap gap-2 mt-4">
+              <button id="changeFileBtn" class="small-btn">Choose another</button>
+              <button id="clearFileBtn" class="small-btn">Remove file</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ──── TOOL-SPECIFIC CONTROL PANELS ──── -->
+
+      <!-- Compress controls (target KB + estimate) — shown for "compress" only -->
+      <section id="compressControls" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="glass-panel p-6 rounded-2xl space-y-6">
+          <div class="flex justify-between items-center">
+            <label for="targetSize" class="text-sm font-medium">Target Size (KB)</label>
+            <span id="targetLabel" class="text-[#10B981] font-mono text-sm">500 KB</span>
+          </div>
+          <input id="targetSize" type="range" min="10" max="2000" value="500"
+                 class="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer">
+          <div class="flex justify-between text-[10px] text-zinc-600 font-mono">
+            <span>10 KB</span><span>2000 KB</span>
+          </div>
+          <p class="text-xs text-zinc-500">Target size is best-effort; PNG compression is lossless and may not reach the exact target.</p>
+        </div>
+        <div class="glass-panel p-6 rounded-2xl flex flex-col justify-center">
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-sm text-zinc-400">Estimated Output</span>
+            <span class="px-2 py-1 bg-emerald-500/10 text-[#10B981] text-[10px] rounded uppercase font-bold tracking-widest">Client-side</span>
+          </div>
+          <div id="estimate" class="text-4xl font-light">— <span class="text-zinc-600 text-lg">KB</span></div>
+          <div id="reduction" class="mt-2 text-xs text-zinc-500">Choose an image to calculate output.</div>
+        </div>
+      </section>
+
+      <!-- Compress output format — shown for "compress" only -->
+      <section id="compressFormatControls" class="hidden glass-panel p-6 rounded-2xl space-y-4">
+        <label class="text-sm text-zinc-400">Output format
+          <select id="compressFormat" class="block mt-2 w-full bg-zinc-900 border border-white/10 rounded-lg p-3">
+            <option value="original">Same as original</option>
+            <option value="image/webp">WEBP (Recommended)</option>
+            <option value="image/jpeg">JPG</option>
+            <option value="image/png">PNG</option>
+          </select>
+        </label>
+        <p class="text-xs text-zinc-500">Conversion is performed locally. WEBP typically gives the best compression ratio.</p>
+      </section>
+
+      <!-- Convert (JPG/PNG/WEBP) format controls — shown for "convert" only -->
+      <section id="convertControls" class="hidden glass-panel p-6 rounded-2xl space-y-4">
+        <label class="text-sm text-zinc-400">Output format
+          <select id="convertFormat" class="block mt-2 w-full bg-zinc-900 border border-white/10 rounded-lg p-3">
+            <option value="image/jpeg">JPG</option>
+            <option value="image/png">PNG</option>
+            <option value="image/webp">WEBP</option>
+          </select>
+        </label>
+        <p class="text-xs text-zinc-500">Conversion is performed in your browser using Canvas. No file leaves your device.</p>
+      </section>
+
+      <!-- Resize controls — shown for "resize" only -->
+      <section id="resizeControls" class="hidden glass-panel p-6 rounded-2xl space-y-5">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label class="text-sm text-zinc-400">Width (px)
+            <input id="resizeWidth" type="number" min="1" max="12000" placeholder="Width"
+                   class="block mt-2 w-full bg-zinc-900 border border-white/10 rounded-lg p-3 text-white">
+          </label>
+          <label class="text-sm text-zinc-400">Height (px)
+            <input id="resizeHeight" type="number" min="1" max="12000" placeholder="Height"
+                   class="block mt-2 w-full bg-zinc-900 border border-white/10 rounded-lg p-3 text-white">
+          </label>
+        </div>
+        <label class="flex items-center gap-3 text-sm cursor-pointer">
+          <input id="keepRatio" type="checkbox" checked> Keep aspect ratio
+        </label>
+        <label class="text-sm text-zinc-400">Output format
+          <select id="resizeFormat" class="block mt-2 w-full bg-zinc-900 border border-white/10 rounded-lg p-3">
+            <option value="image/png">PNG</option>
+            <option value="image/jpeg">JPG</option>
+            <option value="image/webp">WEBP</option>
+          </select>
+        </label>
+        <p class="text-xs text-zinc-500">Resizing changes pixel dimensions. All processing happens locally in your browser.</p>
+      </section>
+
+      <!-- Metadata format controls — shown for "metadata" only -->
+      <section id="metadataControls" class="hidden glass-panel p-6 rounded-2xl space-y-4">
+        <label class="text-sm text-zinc-400">Output format
+          <select id="outputFormat" class="block mt-2 w-full bg-zinc-900 border border-white/10 rounded-lg p-3">
+            <option value="image/jpeg">JPG</option>
+            <option value="image/png">PNG</option>
+            <option value="image/webp">WEBP</option>
+          </select>
+        </label>
+        <p class="text-xs text-zinc-500">Re-encoding via Canvas strips embedded EXIF and metadata. No data leaves your browser.</p>
+      </section>
+
+      <!-- PDF to Image controls — shown for "pdf-image" only -->
+      <section id="pdfImageControls" class="hidden glass-panel p-6 rounded-2xl space-y-4">
+        <label class="text-sm text-zinc-400">PDF page to convert (1-based; enter 0 for all pages)
+          <input id="pdfPage" type="number" min="0" value="1"
+                 class="block mt-2 w-full bg-zinc-900 border border-white/10 rounded-lg p-3">
+        </label>
+        <label class="text-sm text-zinc-400">Image format
+          <select id="pdfImageFormat" class="block mt-2 w-full bg-zinc-900 border border-white/10 rounded-lg p-3">
+            <option value="image/png">PNG</option>
+            <option value="image/jpeg">JPG</option>
+            <option value="image/webp">WEBP</option>
+          </select>
+        </label>
+        <p class="text-xs text-zinc-500">Pages are rendered at 2× scale for sharpness. Processing is entirely local.</p>
+      </section>
+
+      <!-- Text to PDF controls — shown for "text-pdf" only -->
+      <section id="textPdfControls" class="hidden glass-panel p-6 rounded-2xl space-y-4">
+        <label class="text-sm text-zinc-400">Text to turn into PDF
+          <textarea id="pdfText" rows="8" placeholder="Write or paste your text here…"
+                    class="block mt-2 w-full bg-zinc-900 border border-white/10 rounded-lg p-3 resize-y"></textarea>
+        </label>
+        <p class="text-xs text-zinc-500">Text is processed locally. Long documents are paginated automatically.</p>
+      </section>
+
+      <!-- Word Counter controls — shown for "word-count" only -->
+      <section id="wordCountControls" class="hidden glass-panel p-6 rounded-2xl space-y-4">
+        <label class="text-sm text-zinc-400">Enter or paste text
+          <textarea id="wordText" rows="8" placeholder="Start typing or paste text…"
+                    class="block mt-2 w-full bg-zinc-900 border border-white/10 rounded-lg p-3 resize-y"></textarea>
+        </label>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="bg-zinc-900 rounded-xl p-4">
+            <p class="text-xs text-zinc-500">Words</p>
+            <p id="wordTotal" class="text-2xl mt-1">0</p>
+          </div>
+          <div class="bg-zinc-900 rounded-xl p-4">
+            <p class="text-xs text-zinc-500">Characters</p>
+            <p id="charTotal" class="text-2xl mt-1">0</p>
+          </div>
+          <div class="bg-zinc-900 rounded-xl p-4">
+            <p class="text-xs text-zinc-500">No spaces</p>
+            <p id="charNoSpace" class="text-2xl mt-1">0</p>
+          </div>
+          <div class="bg-zinc-900 rounded-xl p-4">
+            <p class="text-xs text-zinc-500">Sentences</p>
+            <p id="sentenceTotal" class="text-2xl mt-1">0</p>
+          </div>
+        </div>
+        <p class="text-xs text-zinc-500">Counts update live as you type. No data is sent anywhere.</p>
+      </section>
+
+      <!-- ACTION ROW -->
+      <div id="actionRow" class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-8 border-t border-white/5">
+        <div></div><!-- spacer so button aligns right -->
+        <!-- FIX: use innerHTML to preserve SVG lightning icon; label changes per tool -->
+        <button id="processBtn"
+                class="bg-white text-black font-bold px-10 py-4 rounded-xl flex items-center gap-3 hover:scale-105 transition-transform">
+          Process &amp; Download
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- STATUS -->
+      <p id="status" class="status text-zinc-400" role="status" aria-live="polite"></p>
+
+      <!-- RESULTS -->
+      <div id="results" class="hidden glass-panel p-5 rounded-2xl space-y-4">
+        <p class="font-medium">Output ready</p>
+        <div id="resultList" class="flex flex-col gap-3"></div>
+      </div>
+
+    </div><!-- /max-w-4xl -->
+  </div>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  /* ── Helpers ── */
+  const $ = id => document.getElementById(id);
+  const show = (id, yes = true) => $(id).classList.toggle("hidden", !yes);
+  const setStatus = (msg, err = false) => {
+    const el = $("status");
+    el.textContent = msg;
+    el.className = "status " + (err ? "text-red-400" : "text-zinc-400");
+  };
+  const formatBytes = n => {
+    if (!Number.isFinite(n)) return "—";
+    return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
+  };
+  const extensionFor = mime =>
+    mime === "image/jpeg" ? "jpg" : mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "bin";
+  const safeBaseName = name =>
+    name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_") || "aetherconvert";
+
+  /* ── Tool definitions ── */
+  const toolInfo = {
+    compress: {
+      title: "Advanced Image Compression",
+      subtitle: "Intelligent size reduction using local browser-based processing.",
+      accept: "image/jpeg,image/png,image/webp",
+      uploadTitle: "Drag and drop image",
+      uploadHint: "PNG, JPG, WEBP up to 50 MB",
+      kind: "image"
+    },
+    convert: {
+      title: "JPG / PNG / WEBP Conversion",
+      subtitle: "Convert images between JPG, PNG and WEBP formats entirely in your browser.",
+      accept: "image/jpeg,image/png,image/webp",
+      uploadTitle: "Drag and drop image",
+      uploadHint: "PNG, JPG, WEBP up to 50 MB",
+      kind: "image"
+    },
+    "image-pdf": {
+      title: "Image to PDF",
+      subtitle: "Combine one or more images into a downloadable PDF in your browser.",
+      accept: "image/jpeg,image/png,image/webp",
+      uploadTitle: "Drop images here",
+      uploadHint: "Select multiple JPG, PNG or WEBP images",
+      kind: "images"
+    },
+    "pdf-image": {
+      title: "PDF to Image",
+      subtitle: "Render PDF pages as images locally in your browser.",
+      accept: "application/pdf,.pdf",
+      uploadTitle: "Drop a PDF here",
+      uploadHint: "PDF files up to 50 MB",
+      kind: "pdf"
+    },
+    resize: {
+      title: "Resize & Crop",
+      subtitle: "Resize an image to exact pixel dimensions, keeping its proportions if desired.",
+      accept: "image/jpeg,image/png,image/webp",
+      uploadTitle: "Drag and drop image",
+      uploadHint: "PNG, JPG, WEBP up to 50 MB",
+      kind: "image"
+    },
+    metadata: {
+      title: "Metadata Remover",
+      subtitle: "Re-encode an image to strip embedded metadata such as EXIF data.",
+      accept: "image/jpeg,image/png,image/webp",
+      uploadTitle: "Drag and drop image",
+      uploadHint: "PNG, JPG, WEBP up to 50 MB",
+      kind: "image"
+    },
+    "text-pdf": {
+      title: "Text to PDF",
+      subtitle: "Turn your text into a clean, paginated PDF document without uploading it.",
+      accept: "",
+      uploadTitle: "",
+      uploadHint: "",
+      kind: "text"
+    },
+    "word-count": {
+      title: "Word Counter",
+      subtitle: "Count words, characters and sentences as you type.",
+      accept: "",
+      uploadTitle: "",
+      uploadHint: "",
+      kind: "text"
+    }
+  };
+
+  /* ── State ── */
+  let currentTool = "compress";
+  let files = [];
+  let loadedImage = null;
+  let originalUrl = null;
+  let pdfDocument = null;
+  const MAX_FILE = 50 * 1024 * 1024; // 50 MB
+
+  /* ── pdf.js worker (must match CDN version) ── */
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+
+  /* ── Canvas / blob utilities ── */
+  function downloadBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  function canvasBlob(canvas, mime, quality) {
+    return new Promise((resolve, reject) =>
+      canvas.toBlob(
+        b => b ? resolve(b) : reject(new Error("Your browser could not encode this output format.")),
+        mime,
+        quality
+      )
+    );
+  }
+
+  function fileToImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not open this image file.")); };
+      img.src = url;
+    });
+  }
+
+  function canvasFromImage(img, w = img.naturalWidth, h = img.naturalHeight) {
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(img, 0, 0, w, h);
+    return c;
+  }
+
+  /* ── Workspace reset ── */
+  function clearResults() {
+    show("results", false);
+    $("resultList").replaceChildren();
+  }
+
+  function resetWorkspace() {
+    files = [];
+    loadedImage = null;
+    pdfDocument = null;
+    if (originalUrl) { URL.revokeObjectURL(originalUrl); originalUrl = null; }
+    $("fileInput").value = "";
+    show("imageWorkspace", false);
+    // FIX: always show preview img (hide/show handled per acceptFiles call)
+    const preview = $("preview");
+    preview.removeAttribute("src");
+    preview.classList.add("hidden");
+    $("fileName").textContent = "";
+    $("fileInfo").textContent = "";
+    $("estimate").innerHTML = '— <span class="text-zinc-600 text-lg">KB</span>';
+    $("reduction").textContent = "Choose an image to calculate output.";
+    clearResults();
+    setStatus("");
+  }
+
+  /* ── File acceptance & validation ── */
+  async function acceptFiles(list) {
+    const incoming = Array.from(list || []);
+    if (!incoming.length) return;
+
+    // ── Image-to-PDF: accept multiple images ──
+    if (currentTool === "image-pdf") {
+      const imgs = incoming.filter(f => f.type.startsWith("image/") &&
+        ["image/jpeg", "image/png", "image/webp"].includes(f.type));
+      if (!imgs.length) { setStatus("Please choose JPG, PNG or WEBP image files.", true); return; }
+      if (imgs.some(f => f.size > MAX_FILE)) { setStatus("Each file must be 50 MB or smaller.", true); return; }
+      resetWorkspace();
+      files = imgs;
+      show("imageWorkspace");
+      $("fileName").textContent = `${files.length} image(s) selected`;
+      $("fileInfo").textContent = files.map(f => `${f.name} · ${formatBytes(f.size)}`).join(" | ");
+      // Show preview of first image
+      originalUrl = URL.createObjectURL(files[0]);
+      $("preview").src = originalUrl;
+      $("preview").classList.remove("hidden");
+      setStatus(`${files.length} image(s) ready to combine into a PDF.`);
+      return;
+    }
+
+    const file = incoming[0];
+    if (file.size > MAX_FILE) { setStatus("File is larger than 50 MB. Choose a smaller file.", true); return; }
+
+    // ── PDF-to-Image: accept PDF ──
+    if (currentTool === "pdf-image") {
+      if (!(file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"))) {
+        setStatus("Please choose a PDF file.", true); return;
+      }
+      resetWorkspace();
+      files = [file];
+      show("imageWorkspace");
+      // FIX: do not show image preview for a PDF file
+      $("preview").classList.add("hidden");
+      $("fileName").textContent = file.name;
+      $("fileInfo").textContent = formatBytes(file.size);
+      setStatus("PDF selected. Click Process & Download to render pages as images.");
+      return;
+    }
+
+    // ── All image tools ──
+    if (!file.type.startsWith("image/")) { setStatus("Please choose a supported image file.", true); return; }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setStatus("Supported image formats are JPG, PNG and WEBP.", true); return;
+    }
+    resetWorkspace();
+    files = [file];
+    try {
+      loadedImage = await fileToImage(file);
+      originalUrl = URL.createObjectURL(file);
+      $("preview").src = originalUrl;
+      $("preview").classList.remove("hidden");
+      $("fileName").textContent = file.name;
+      $("fileInfo").textContent =
+        `${loadedImage.naturalWidth} × ${loadedImage.naturalHeight} px · ${formatBytes(file.size)}`;
+      show("imageWorkspace");
+      // Pre-fill resize dimensions
+      $("resizeWidth").value = loadedImage.naturalWidth;
+      $("resizeHeight").value = loadedImage.naturalHeight;
+      updateEstimate();
+      setStatus("Image ready. Your file stays in this browser.");
+    } catch (e) {
+      setStatus(e.message, true);
+    }
+  }
+
+  /* ── Compression estimate display ── */
+  function updateEstimate() {
+    $("targetLabel").textContent = $("targetSize").value + " KB";
+    if (!files.length || !loadedImage) {
+      $("estimate").innerHTML = '— <span class="text-zinc-600 text-lg">KB</span>';
+      $("reduction").textContent = "Choose an image to calculate output.";
+      return;
+    }
+    const target = Number($("targetSize").value) * 1024;
+    const original = files[0].size;
+    const estimate = Math.min(original, target);
+    $("estimate").innerHTML = `~${(estimate / 1024).toFixed(0)} <span class="text-zinc-600 text-lg">KB</span>`;
+    $("reduction").textContent = original > target
+      ? `${Math.round((1 - target / original) * 100)}% target reduction from original (best-effort)`
+      : "Target is larger than or equal to the original file — output will be close to original size.";
+  }
+
+  /* ── Tool activation ── */
+  function activateTool(name) {
+    if (!toolInfo[name]) return;
+    currentTool = name;
+    resetWorkspace();
+
+    // Sidebar highlight
+    document.querySelectorAll("[data-tool]").forEach(a =>
+      a.classList.toggle("active-tool", a.dataset.tool === name));
+
+    // Page heading
+    const cfg = toolInfo[name];
+    $("pageTitle").textContent = cfg.title;
+    $("pageSubtitle").textContent = cfg.subtitle;
+
+    // Upload zone
+    const needsFile = cfg.kind !== "text";
+    show("uploadSection", needsFile);
+    if (needsFile) {
+      $("uploadTitle").textContent = cfg.uploadTitle;
+      $("uploadHint").textContent = cfg.uploadHint;
+      $("fileInput").accept = cfg.accept;
+      $("fileInput").multiple = name === "image-pdf";
+    }
+
+    // FIX: show exactly the right control panel for each tool
+    show("compressControls",      name === "compress");
+    show("compressFormatControls",name === "compress");
+    show("convertControls",       name === "convert");
+    show("resizeControls",        name === "resize");
+    show("metadataControls",      name === "metadata");
+    show("pdfImageControls",      name === "pdf-image");
+    show("textPdfControls",       name === "text-pdf");
+    show("wordCountControls",     name === "word-count");
+
+    // Action row — hidden for word-count (live updates, no separate action)
+    show("actionRow", name !== "word-count");
+
+    // FIX: update button label while preserving the SVG icon
+    const btnLabels = {
+      "compress":    "Process & Download",
+      "convert":     "Convert & Download",
+      "image-pdf":   "Create PDF",
+      "pdf-image":   "Convert PDF Pages",
+      "resize":      "Resize & Download",
+      "metadata":    "Remove Metadata & Download",
+      "text-pdf":    "Create PDF",
+      "word-count":  "Count Words"
+    };
+    $("processBtn").innerHTML =
+      `${btnLabels[name] || "Process & Download"}` +
+      ` <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">` +
+      `<path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>`;
+    $("processBtn").disabled = false;
+
+    show("imageWorkspace", false);
+    show("results", false);
+    setStatus("");
+
+    if (name === "word-count") updateWordCount();
+  }
+
+  /* ── Word counter ── */
+  function updateWordCount() {
+    const t = $("wordText").value;
+    const trim = t.trim();
+    // FIX: empty string → 0 sentences (not 1)
+    const words = trim ? trim.split(/\s+/u).length : 0;
+    const sentences = trim ? (trim.match(/[.!?]+(?=\s|$)/gu) || []).length : 0;
+    $("wordTotal").textContent = words;
+    $("charTotal").textContent = t.length;
+    $("charNoSpace").textContent = t.replace(/\s/g, "").length;
+    // Show at least 1 if text exists but has no terminal punctuation (common paragraph text)
+    $("sentenceTotal").textContent = trim && sentences === 0 ? 1 : sentences;
+  }
+
+  /* ── Result link builder ── */
+  function resultLink(blob, name, label = "Download") {
+    const wrap = document.createElement("div");
+    wrap.className = "flex items-center justify-between gap-3 bg-zinc-900 rounded-xl p-3";
+    const info = document.createElement("div");
+    info.className = "min-w-0";
+    const title = document.createElement("p");
+    title.className = "text-sm break-all";
+    title.textContent = name;
+    const size = document.createElement("p");
+    size.className = "text-xs text-zinc-500 mt-1";
+    size.textContent = formatBytes(blob.size);
+    info.append(title, size);
+    const btn = document.createElement("button");
+    btn.className = "small-btn shrink-0";
+    btn.textContent = label;
+    btn.onclick = () => downloadBlob(blob, name);
+    wrap.append(info, btn);
+    $("resultList").append(wrap);
+    show("results");
+  }
+
+  /* ══════════════════ PROCESSORS ══════════════════ */
+
+  /* Compression (binary search on quality) */
+  async function processCompression() {
+    if (!loadedImage || !files.length) throw new Error("Choose an image first.");
+    let mime = $("compressFormat").value;
+    if (mime === "original") mime = files[0].type;
+    const outName = `${safeBaseName(files[0].name)}-compressed.${extensionFor(mime)}`;
+    if (mime === "image/png") {
+      // PNG is lossless — just re-encode at canvas quality
+      const blob = await canvasBlob(canvasFromImage(loadedImage), mime);
+      resultLink(blob, outName);
+      setStatus("PNG re-encoded. PNG compression is lossless so the target KB may not be met exactly.");
+      return;
+    }
+    const target = Number($("targetSize").value) * 1024;
+    const canvas = canvasFromImage(loadedImage);
+    let lo = 0.05, hi = 0.95, best = null;
+    for (let i = 0; i < 10; i++) {
+      const q = (lo + hi) / 2;
+      const b = await canvasBlob(canvas, mime, q);
+      best = b;
+      if (b.size > target) hi = q; else lo = q;
+      if (Math.abs(b.size - target) / target < 0.04) break;
+    }
+    resultLink(best, outName);
+    setStatus(`Done: ${formatBytes(best.size)} output. Target was ${$("targetSize").value} KB.`);
+  }
+
+  /* Format conversion (JPG / PNG / WEBP) */
+  async function processConvert() {
+    if (!loadedImage || !files.length) throw new Error("Choose an image first.");
+    const mime = $("convertFormat").value;
+    const canvas = canvasFromImage(loadedImage);
+    // For JPEG output, fill transparent areas with white
+    if (mime === "image/jpeg") {
+      const ctx = canvas.getContext("2d");
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const out = document.createElement("canvas");
+      out.width = canvas.width; out.height = canvas.height;
+      const octx = out.getContext("2d");
+      octx.fillStyle = "#fff";
+      octx.fillRect(0, 0, out.width, out.height);
+      octx.drawImage(canvas, 0, 0);
+      const blob = await canvasBlob(out, mime, 0.92);
+      resultLink(blob, `${safeBaseName(files[0].name)}.${extensionFor(mime)}`);
+    } else {
+      const blob = await canvasBlob(canvas, mime, 0.92);
+      resultLink(blob, `${safeBaseName(files[0].name)}.${extensionFor(mime)}`);
+    }
+    setStatus(`Converted to ${extensionFor(mime).toUpperCase()}. File processed locally.`);
+  }
+
+  /* Resize */
+  async function processResize() {
+    if (!loadedImage || !files.length) throw new Error("Choose an image first.");
+    let w = Number($("resizeWidth").value);
+    let h = Number($("resizeHeight").value);
+    if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1 || w > 12000 || h > 12000) {
+      throw new Error("Enter width and height between 1 and 12,000 pixels.");
+    }
+    const mime = $("resizeFormat").value;
+    const c = canvasFromImage(loadedImage, w, h);
+    const blob = await canvasBlob(c, mime, 0.92);
+    resultLink(blob, `${safeBaseName(files[0].name)}-${w}x${h}.${extensionFor(mime)}`);
+    setStatus(`Resized to ${w} × ${h} px.`);
+  }
+
+  /* Metadata remover */
+  async function processMetadata() {
+    if (!loadedImage || !files.length) throw new Error("Choose an image first.");
+    const mime = $("outputFormat").value;
+    const c = document.createElement("canvas");
+    c.width = loadedImage.naturalWidth;
+    c.height = loadedImage.naturalHeight;
+    const ctx = c.getContext("2d");
+    if (mime === "image/jpeg") {
+      // Fill white so transparent PNG alpha doesn't become black
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, c.width, c.height);
+    }
+    ctx.drawImage(loadedImage, 0, 0);
+    const blob = await canvasBlob(c, mime, 0.92);
+    resultLink(blob, `${safeBaseName(files[0].name)}-clean.${extensionFor(mime)}`);
+    setStatus("Metadata stripped. Canvas re-encoding removes EXIF and embedded profiles.");
+  }
+
+  /* Image → PDF */
+  async function processImagesToPdf() {
+    if (!files.length) throw new Error("Choose at least one image.");
+    if (!window.jspdf?.jsPDF) throw new Error("PDF library did not load. Check your connection and reload.");
+    const { jsPDF } = window.jspdf;
+    let doc = null;
+    for (let i = 0; i < files.length; i++) {
+      const img = await fileToImage(files[i]);
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const orientation = w >= h ? "landscape" : "portrait";
+      if (!doc) {
+        doc = new jsPDF({ orientation, unit: "pt", format: [w, h], compress: true });
+      } else {
+        doc.addPage([w, h], orientation);
+        doc.setPage(i + 1);
+      }
+      const data = canvasFromImage(img).toDataURL("image/jpeg", 0.92);
+      doc.addImage(data, "JPEG", 0, 0, w, h, undefined, "FAST");
+    }
+    const blob = doc.output("blob");
+    resultLink(blob, "aetherconvert-images.pdf");
+    setStatus(`${files.length} image(s) combined into one PDF.`);
+  }
+
+  /* PDF → Images */
+  async function processPdfToImages() {
+    if (!files.length) throw new Error("Choose a PDF first.");
+    if (!window.pdfjsLib) throw new Error("PDF library did not load. Check your connection and reload.");
+    const data = await files[0].arrayBuffer();
+    pdfDocument = await pdfjsLib.getDocument({ data }).promise;
+    const requested = Number($("pdfPage").value);
+    const totalPages = pdfDocument.numPages;
+    let pages;
+    if (requested === 0) {
+      pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+    } else {
+      if (!Number.isInteger(requested) || requested < 1 || requested > totalPages) {
+        throw new Error(`This PDF has ${totalPages} page(s). Enter 1–${totalPages}, or 0 for all pages.`);
+      }
+      pages = [requested];
+    }
+    const mime = $("pdfImageFormat").value;
+    for (const n of pages) {
+      const page = await pdfDocument.getPage(n);
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      const blob = await canvasBlob(canvas, mime, 0.92);
+      resultLink(blob, `page-${String(n).padStart(3, "0")}.${extensionFor(mime)}`);
+    }
+    setStatus(`Rendered ${pages.length} of ${totalPages} page(s). Download each image below.`);
+  }
+
+  /* Text → PDF */
+  async function processTextPdf() {
+    const text = $("pdfText").value;
+    if (!text.trim()) throw new Error("Enter some text first.");
+    if (!window.jspdf?.jsPDF) throw new Error("PDF library did not load. Check your connection and reload.");
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const lines = doc.splitTextToSize(text, 180);
+    let y = 18;
+    for (const line of lines) {
+      if (y > 280) { doc.addPage(); y = 18; }
+      doc.text(line, 15, y);
+      y += 7;
+    }
+    const blob = doc.output("blob");
+    resultLink(blob, "text-document.pdf");
+    setStatus("Your PDF is ready.");
+  }
+
+  /* ── Master process dispatcher ── */
+  async function process() {
+    clearResults();
+    setStatus("Processing locally…");
+    $("processBtn").disabled = true;
+    try {
+      if      (currentTool === "compress")   await processCompression();
+      else if (currentTool === "convert")    await processConvert();
+      else if (currentTool === "resize")     await processResize();
+      else if (currentTool === "metadata")   await processMetadata();
+      else if (currentTool === "image-pdf")  await processImagesToPdf();
+      else if (currentTool === "pdf-image")  await processPdfToImages();
+      else if (currentTool === "text-pdf")   await processTextPdf();
+      else if (currentTool === "word-count") { updateWordCount(); setStatus("Word count updated."); }
+    } catch (e) {
+      setStatus(e?.message || "Something went wrong while processing.", true);
+    } finally {
+      $("processBtn").disabled = false;
+    }
+  }
+
+  /* ══════════════════ EVENT LISTENERS ══════════════════ */
+
+  // Sidebar navigation
+  document.querySelectorAll("[data-tool]").forEach(a =>
+    a.addEventListener("click", e => { e.preventDefault(); activateTool(a.dataset.tool); }));
+
+  // File selection
+  $("selectFileBtn").addEventListener("click", e => { e.stopPropagation(); $("fileInput").click(); });
+  $("uploadSection").addEventListener("click", e => {
+    if (e.target.closest("button")) return;
+    if (toolInfo[currentTool].kind !== "text") $("fileInput").click();
+  });
+  $("uploadSection").addEventListener("keydown", e => {
+    if ((e.key === "Enter" || e.key === " ") && toolInfo[currentTool].kind !== "text") {
+      e.preventDefault(); $("fileInput").click();
+    }
+  });
+  $("fileInput").addEventListener("change", e => acceptFiles(e.target.files));
+
+  // Drag-and-drop
+  $("uploadSection").addEventListener("dragover", e => {
+    e.preventDefault(); $("uploadSection").classList.add("dragover");
+  });
+  $("uploadSection").addEventListener("dragleave", () =>
+    $("uploadSection").classList.remove("dragover"));
+  $("uploadSection").addEventListener("drop", e => {
+    e.preventDefault();
+    $("uploadSection").classList.remove("dragover");
+    acceptFiles(e.dataTransfer.files);
+  });
+
+  // Controls
+  $("targetSize").addEventListener("input", updateEstimate);
+
+  // FIX: reliable aspect-ratio linking using a flag instead of document.activeElement
+  let _resizeChanging = false;
+  $("resizeWidth").addEventListener("input", () => {
+    if (_resizeChanging || !loadedImage || !$("keepRatio").checked) return;
+    const w = Number($("resizeWidth").value);
+    if (w > 0) {
+      _resizeChanging = true;
+      $("resizeHeight").value = Math.max(1, Math.round(w * loadedImage.naturalHeight / loadedImage.naturalWidth));
+      _resizeChanging = false;
+    }
+  });
+  $("resizeHeight").addEventListener("input", () => {
+    if (_resizeChanging || !loadedImage || !$("keepRatio").checked) return;
+    const h = Number($("resizeHeight").value);
+    if (h > 0) {
+      _resizeChanging = true;
+      $("resizeWidth").value = Math.max(1, Math.round(h * loadedImage.naturalWidth / loadedImage.naturalHeight));
+      _resizeChanging = false;
+    }
+  });
+
+  $("changeFileBtn").addEventListener("click", () => $("fileInput").click());
+  $("clearFileBtn").addEventListener("click", resetWorkspace);
+  $("processBtn").addEventListener("click", process);
+  $("wordText").addEventListener("input", updateWordCount);
+
+  // Tool search — filters sidebar items; does NOT auto-switch tool
+  $("toolSearch").addEventListener("input", () => {
+    const q = $("toolSearch").value.trim().toLowerCase();
+    document.querySelectorAll("[data-tool]").forEach(a => {
+      const match = !q ||
+        a.textContent.toLowerCase().includes(q) ||
+        toolInfo[a.dataset.tool]?.title.toLowerCase().includes(q);
+      a.classList.toggle("hidden", !match);
+    });
+  });
+
+  // Boot with compress tool active
+  activateTool("compress");
+})();
+</script>
+</body>
+</html>
